@@ -111,29 +111,16 @@ private _commandoTeam = createHashMapFromArray [
     ["visibilityRadius",11]
 ];
 
-private _droidekaPair = createHashMapFromArray [
-    ["name","Droideka Pair"],
-    ["weight",2],
-    ["units",[_DROIDEKA,_DROIDEKA]],
+private _droidekaSingle = createHashMapFromArray [
+    ["name","Independent Droideka"],
+    ["weight",3],
+    ["units",[_DROIDEKA]],
     ["skill",[0.52,0.67]],
-    ["formation","DIAMOND"],
-    ["objectClearance",9],
+    ["formation","FILE"],
+    ["objectClearance",8],
     ["terrainClearance",4],
     ["maxGradient",0.24],
-    ["visibilityRadius",12],
-    ["visibilityHeight",1.8]
-];
-
-private _droidekaSection = createHashMapFromArray [
-    ["name","Droideka Section"],
-    ["weight",1],
-    ["units",[_DROIDEKA,_DROIDEKA,_DROIDEKA]],
-    ["skill",[0.54,0.69]],
-    ["formation","DIAMOND"],
-    ["objectClearance",10],
-    ["terrainClearance",4],
-    ["maxGradient",0.23],
-    ["visibilityRadius",13],
+    ["visibilityRadius",10],
     ["visibilityHeight",1.8]
 ];
 
@@ -170,6 +157,7 @@ private _vehicleTemplates = [
 private _config = createHashMapFromArray [
     ["center",_center],
     ["side",east],
+    ["targetSide",west],
     ["waveId",_waveId],
     ["minSpawnRadius",_minSpawnRadius],
     ["maxSpawnRadius",_maxSpawnRadius],
@@ -183,16 +171,16 @@ private _config = createHashMapFromArray [
         _b1FireSupportPlatoon,
         _b2AssaultPlatoon,
         _commandoTeam,
-        _droidekaPair,
-        _droidekaSection
+        _droidekaSingle
     ]],
     ["vehicleTemplates",_vehicleTemplates],
     ["attemptsPerGroup",40],
     ["groupSeparation",45],
     ["searchRadius",250],
-    ["attackMode","LAMBS"],
+    ["cqbRadius",75],
     ["lambsReinforcement",true],
     ["lambsKnowledgeSeedChance",0.25],
+    ["ignoreAircraft",true],
     ["spawnDelay",0.20],
     ["debugMode",toUpper _debugMode],
     ["onGroupSpawned",{
@@ -201,6 +189,7 @@ private _config = createHashMapFromArray [
         _group setVariable ["TMC_attackWaveManaged",true,true];
         _group setVariable ["TMC_attackWaveKind",toUpper _kind,true];
         _group setVariable ["TMC_attackWaveId",_waveId,true];
+        _group setVariable ["TMC_attackWaveTemplate",_template getOrDefault ["name","UNKNOWN"],true];
         if (!isNull _vehicle) then {
             _vehicle setVariable ["TMC_attackWaveVehicle",true,true];
             _vehicle setVariable ["TMC_attackWaveId",_waveId,true];
