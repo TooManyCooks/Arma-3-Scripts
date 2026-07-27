@@ -53,6 +53,10 @@ private _defaults = createHashMapFromArray [
     ["infantryEvaluationInterval",5],
     ["vehicleEvaluationInterval",10],
     ["vehicleEvaluationOffset",2.5],
+    ["behaviorEvaluationInterval",20],
+    ["stuckTimeout",75],
+    ["stuckMovementDistance",20],
+    ["targetMoveThreshold",35],
     ["maxDesiredInfantry",-1],
     ["hardInfantryCap",450],
     ["maxActiveVehicles",20],
@@ -84,6 +88,7 @@ private _state = createHashMapFromArray [
     ["packageNumber",0],
     ["nextInfantryCheck",_now + (_config get "initialDelay")],
     ["nextVehicleCheck",_now + (_config get "initialDelay") + (_config get "vehicleEvaluationOffset")],
+    ["nextBehaviorCheck",_now + (_config get "initialDelay") + 5],
     ["snapshot",createHashMap]
 ];
 missionNamespace setVariable [_stateName,_state];
@@ -91,6 +96,7 @@ missionNamespace setVariable [_stateName,_state];
 private _fnc_evaluate = {
     params ["_args","_pfhHandle"];
     _args params ["_stateName"];
+
     private _state = missionNamespace getVariable [_stateName,createHashMap];
     if ((count _state) isEqualTo 0) exitWith { [_pfhHandle] call CBA_fnc_removePerFrameHandler };
     if !(_state getOrDefault ["running",false]) exitWith { [_pfhHandle] call CBA_fnc_removePerFrameHandler };
@@ -102,9 +108,11 @@ private _fnc_evaluate = {
     private _scalingSide = _config get "scalingSide";
     private _enemySide = _config get "enemySide";
     private _mode = toUpper (_config get "scalingMode");
+
     private _sideUnits = allUnits select {
         alive _x && {side group _x isEqualTo _scalingSide}
     };
+
     private _scalingUnits = switch (_mode) do {
         case "SIDE": {_sideUnits};
         case "RADIUS": {_sideUnits select {_x distance2D _centerPos <= (_config get "scalingRadius")}};
@@ -133,10 +141,12 @@ private _fnc_evaluate = {
     private _vehicleGroups = _managedGroups select {
         toUpper (_x getVariable ["TMC_attackWaveKind",""]) isEqualTo "VEHICLE"
     };
+
     private _infantryCount = 0;
     {
         _infantryCount = _infantryCount + ({alive _x && {side group _x isEqualTo _enemySide}} count units _x);
     } forEach _infantryGroups;
+
     private _managedVehicles = vehicles select {
         alive _x
         && {_x getVariable ["TMC_attackWaveVehicle",false]}
@@ -161,11 +171,104 @@ private _fnc_evaluate = {
     private _now = diag_tickTime;
     private _infantryDue = _now >= (_state get "nextInfantryCheck");
     private _vehicleDue = _now >= (_state get "nextVehicleCheck");
+    private _behaviorDue = _now >= (_state get "nextBehaviorCheck");
+
     if (_infantryDue) then {
         _state set ["nextInfantryCheck",_now + (_config get "infantryEvaluationInterval")];
     };
     if (_vehicleDue) then {
         _state set ["nextVehicleCheck",_now + (_config get "vehicleEvaluationInterval")];
+    };
+    if (_behaviorDue) then {
+        _state set ["nextBehaviorCheck",_now + (_config get "behaviorEvaluationInterval")];
+    };
+
+    private _retaskedGroups = 0;
+    private _stuckGroups = 0;
+
+    if (_behaviorDue && {!(_infantryGroups isEqualTo [])}) then {
+        private _aircraft = vehicles select { alive _x && {_x isKindOf "Air"} };
+        private _groundPlayers = ([] call CBA_fnc_players) select {
+            alive _x
+            && {side group _x isEqualTo _scalingSide}
+            && {!((vehicle _x) isKindOf "Air")}
+        };
+        private _groundLeaders = _groundPlayers select { leader group _x isEqualTo _x };
+        private _targetPool = if (_groundLeaders isEqualTo []) then {_groundPlayers} else {_groundLeaders};
+
+        {
+            private _group = _x;
+            private _leader = leader _group;
+
+            if (!isNull _leader) then {
+                _group setBehaviourStrong "AWARE";
+                _group setCombatMode "YELLOW";
+                _group setSpeedMode "FULL";
+                _group enableAttack false;
+                _group allowFleeing 0;
+
+                {
+                    _group ignoreTarget _x;
+                } forEach _aircraft;
+
+                private _target = objNull;
+                if !(_targetPool isEqualTo []) then {
+                    _target = _targetPool select 0;
+                    private _bestDistance = _leader distance2D _target;
+                    {
+                        private _distance = _leader distance2D _x;
+                        if (_distance < _bestDistance) then {
+                            _target = _x;
+                            _bestDistance = _distance;
+                        };
+                    } forEach _targetPool;
+                };
+
+                private _targetPos = if (isNull _target) then {+_centerPos} else {getPosATL _target};
+                _targetPos resize 3;
+                _targetPos set [2,0];
+
+                private _waypoint = _group getVariable ["TMC_attackWaypoint",[]];
+                if !(_waypoint isEqualTo []) then {
+                    private _oldTargetPos = _group getVariable ["TMC_attackTargetPosition",_targetPos];
+                    if (_oldTargetPos distance2D _targetPos >= (_config get "targetMoveThreshold")) then {
+                        _waypoint setWaypointPosition [_targetPos,-1];
+                        _group setCurrentWaypoint _waypoint;
+                        _group move _targetPos;
+                        _group setVariable ["TMC_attackTargetPosition",_targetPos];
+                        _group setVariable ["TMC_attackTarget",_target];
+                        _group setVariable ["TMC_lastRetaskTime",_now];
+                        _retaskedGroups = _retaskedGroups + 1;
+                    };
+                };
+
+                private _lastPosition = _group getVariable ["TMC_lastLeaderPosition",getPosATL _leader];
+                private _lastProgress = _group getVariable ["TMC_lastProgressTime",_now];
+
+                if (_leader distance2D _lastPosition >= (_config get "stuckMovementDistance")) then {
+                    _group setVariable ["TMC_lastLeaderPosition",getPosATL _leader];
+                    _group setVariable ["TMC_lastProgressTime",_now];
+                } else {
+                    if (_now - _lastProgress >= (_config get "stuckTimeout")) then {
+                        _stuckGroups = _stuckGroups + 1;
+                        if !(_waypoint isEqualTo []) then {
+                            _waypoint setWaypointPosition [_targetPos,-1];
+                            _group setCurrentWaypoint _waypoint;
+                        };
+                        {
+                            if (alive _x) then {
+                                _x forceSpeed -1;
+                                _x doFollow _leader;
+                            };
+                        } forEach units _group;
+                        _group move _targetPos;
+                        _group setVariable ["TMC_lastLeaderPosition",getPosATL _leader];
+                        _group setVariable ["TMC_lastProgressTime",_now];
+                        _group setVariable ["TMC_lastRetaskTime",_now];
+                    };
+                };
+            };
+        } forEach _infantryGroups;
     };
 
     private _sharedUsed = count _managedGroups + count _infantryHandles + count _vehicleHandles;
@@ -231,6 +334,8 @@ private _fnc_evaluate = {
         ["vehicleDeficit",_vehicleDeficit],
         ["infantryGroups",count _infantryGroups],
         ["vehicleGroups",count _vehicleGroups],
+        ["retaskedGroups",_retaskedGroups],
+        ["stuckGroups",_stuckGroups],
         ["sentInfantry",_sentInfantry],
         ["sentVehicle",_sentVehicle],
         ["fps",diag_fps]
@@ -248,10 +353,11 @@ _state set ["pfhHandle",_pfh];
 missionNamespace setVariable [_stateName,_state];
 
 diag_log format [
-    "[TMC v5 Director] Started. Infantry %1:1 every %2s. Vehicles 1:%3 every %4s with %5s offset.",
+    "[TMC v5 Director] Started. Infantry %1:1 every %2s. Vehicles 1:%3 every %4s with %5s offset. Behavior checks every %6s.",
     _config get "enemyRatio",
     _config get "infantryEvaluationInterval",
     _config get "scalingUnitsPerVehicle",
     _config get "vehicleEvaluationInterval",
-    _config get "vehicleEvaluationOffset"
+    _config get "vehicleEvaluationOffset",
+    _config get "behaviorEvaluationInterval"
 ];
