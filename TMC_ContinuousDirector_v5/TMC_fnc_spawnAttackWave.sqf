@@ -6,6 +6,7 @@ if !(_userConfig isEqualType createHashMap) exitWith { createHashMapFromArray [[
 private _defaults = createHashMapFromArray [
     ["center", objNull],
     ["side", east],
+    ["targetSide", west],
     ["minSpawnRadius", 500],
     ["maxSpawnRadius", 850],
     ["minPlayerDistance", 225],
@@ -17,10 +18,11 @@ private _defaults = createHashMapFromArray [
     ["vehicleGroupCount", 0],
     ["infantryTemplates", []],
     ["vehicleTemplates", []],
-    ["attackMode", "LAMBS"],
     ["searchRadius", 250],
+    ["cqbRadius", 75],
     ["lambsReinforcement", true],
     ["lambsKnowledgeSeedChance", 0.25],
+    ["ignoreAircraft", true],
     ["spawnDelay", 0.20],
     ["debugMode", "LOG"],
     ["waveId", -1],
@@ -39,6 +41,7 @@ _centerPos resize 3;
 _centerPos set [2,0];
 
 private _side = _config get "side";
+private _targetSide = _config get "targetSide";
 private _minRadius = (_config get "minSpawnRadius") max 0;
 private _maxRadius = (_config get "maxSpawnRadius") max _minRadius;
 private _minPlayerDistance = (_config get "minPlayerDistance") max 0;
@@ -75,6 +78,7 @@ private _fnc_hidden = {
         alive _x && { _x distance2D _candidate <= _visibilityMaxDistance }
     };
     if (_players isEqualTo []) exitWith { true };
+
     private _samples = [
         [0,0,0],
         [_sampleRadius,0,0],
@@ -84,6 +88,7 @@ private _fnc_hidden = {
     ];
     private _heights = [_sampleHeight];
     if (_kind isEqualTo "VEHICLE") then { _heights pushBack (_sampleHeight + 1.5) };
+
     private _hidden = true;
     {
         private _viewer = _x;
@@ -117,18 +122,27 @@ private _fnc_findPosition = {
     private _sampleRadius = _template getOrDefault ["visibilityRadius",if (_vehicle) then {14} else {14}];
     private _sampleHeight = _template getOrDefault ["visibilityHeight",if (_vehicle) then {2.5} else {1.3}];
     private _accepted = [];
+
+    private _players = ([] call CBA_fnc_players) select { alive _x };
+
     for "_attempt" from 1 to _attempts do {
         private _candidate = [_centerPos,_minRadius,_maxRadius,_objectClearance,0,_maxGradient,0,[],[[0,0,0],[0,0,0]]] call BIS_fnc_findSafePos;
         private _valid = !(_candidate isEqualTo [0,0,0]);
+
         if (_valid) then {
             _candidate resize 3;
             _candidate set [2,0];
             if (_vehicle && {_template getOrDefault ["preferRoad",true]}) then {
                 private _roads = _candidate nearRoads (_template getOrDefault ["roadSearchRadius",75]);
-                if (_roads isEqualTo []) then { _valid = false } else { _candidate = getPosATL (_roads select 0) };
+                if (_roads isEqualTo []) then {
+                    _valid = false;
+                } else {
+                    _candidate = getPosATL (_roads select 0);
+                    _candidate set [2,0];
+                };
             };
         };
-        private _players = ([] call CBA_fnc_players) select { alive _x };
+
         if (_valid && {_players findIf {_x distance2D _candidate < _minPlayerDistance} >= 0}) then { _valid = false };
         if (_valid && {_reserved findIf {_x distance2D _candidate < _groupSeparation} >= 0}) then { _valid = false };
         if (_valid && {surfaceIsWater _candidate}) then { _valid = false };
@@ -140,15 +154,53 @@ private _fnc_findPosition = {
     _accepted
 };
 
+private _fnc_nearestGroundLeader = {
+    params ["_group"];
+    private _source = leader _group;
+    if (isNull _source) exitWith { objNull };
+
+    private _players = ([] call CBA_fnc_players) select {
+        alive _x
+        && {side group _x isEqualTo _targetSide}
+        && {!((vehicle _x) isKindOf "Air")}
+    };
+    if (_players isEqualTo []) exitWith { objNull };
+
+    private _leaders = _players select { leader group _x isEqualTo _x };
+    private _pool = if (_leaders isEqualTo []) then { _players } else { _leaders };
+    private _nearest = _pool select 0;
+    private _bestDistance = _source distance2D _nearest;
+
+    {
+        private _distance = _source distance2D _x;
+        if (_distance < _bestDistance) then {
+            _nearest = _x;
+            _bestDistance = _distance;
+        };
+    } forEach _pool;
+    _nearest
+};
+
+private _fnc_ignoreAircraft = {
+    params ["_group"];
+    if !(_config get "ignoreAircraft") exitWith {};
+    {
+        _group ignoreTarget _x;
+    } forEach (vehicles select { alive _x && {_x isKindOf "Air"} });
+};
+
 private _fnc_prepareInfantry = {
     params ["_group"];
-    _group setBehaviourStrong "COMBAT";
-    _group setCombatMode "RED";
+    _group setBehaviourStrong "AWARE";
+    _group setCombatMode "YELLOW";
     _group setSpeedMode "FULL";
-    _group enableAttack true;
+    _group enableAttack false;
+    _group allowFleeing 0;
+
     if (_config get "lambsReinforcement") then {
         _group setVariable ["lambs_danger_enableGroupReinforce",true,true];
     };
+
     {
         _x enableStamina false;
         _x enableFatigue false;
@@ -163,28 +215,38 @@ private _fnc_prepareInfantry = {
         _x enableAI "SUPPRESSION";
         _x setVariable ["lambs_danger_dangerRadio",true,true];
     } forEach units _group;
+
+    [_group] call _fnc_ignoreAircraft;
 };
 
 private _fnc_taskInfantry = {
     params ["_group"];
     [_group] call _fnc_prepareInfantry;
-    if (!isNil "lambs_wp_fnc_taskAssault") then {
-        [_group,_centerPos] spawn lambs_wp_fnc_taskAssault;
-    } else {
-        private _wp = _group addWaypoint [_centerPos,_config get "searchRadius"];
-        _wp setWaypointType "SAD";
-        _wp setWaypointBehaviour "COMBAT";
-        _wp setWaypointCombatMode "RED";
-        _wp setWaypointSpeed "FULL";
-    };
-    if (random 1 < (_config get "lambsKnowledgeSeedChance")) then {
-        private _targets = ([] call CBA_fnc_players) select { alive _x };
-        if !(_targets isEqualTo []) then {
-            private _leader = leader _group;
-            private _nearest = _targets select 0;
-            { if (_leader distance2D _x < _leader distance2D _nearest) then { _nearest = _x } } forEach _targets;
-            _leader reveal [_nearest,1.25];
-        };
+
+    private _target = [_group] call _fnc_nearestGroundLeader;
+    private _targetPos = if (isNull _target) then { +_centerPos } else { getPosATL _target };
+    _targetPos resize 3;
+    _targetPos set [2,0];
+
+    [_group] call CBA_fnc_clearWaypoints;
+    private _waypoint = _group addWaypoint [_targetPos,-1];
+    _waypoint setWaypointType "lambs_danger_CQB";
+    _waypoint setWaypointBehaviour "AWARE";
+    _waypoint setWaypointCombatMode "YELLOW";
+    _waypoint setWaypointSpeed "FULL";
+    _waypoint setWaypointCompletionRadius ((_config get "cqbRadius") max 25);
+    _group setCurrentWaypoint _waypoint;
+    _group move _targetPos;
+
+    _group setVariable ["TMC_attackWaypoint",_waypoint];
+    _group setVariable ["TMC_attackTarget",_target];
+    _group setVariable ["TMC_attackTargetPosition",_targetPos];
+    _group setVariable ["TMC_lastLeaderPosition",getPosATL leader _group];
+    _group setVariable ["TMC_lastProgressTime",diag_tickTime];
+    _group setVariable ["TMC_lastRetaskTime",diag_tickTime];
+
+    if (random 1 < (_config get "lambsKnowledgeSeedChance") && {!isNull _target}) then {
+        (leader _group) reveal [_target,1.25];
     };
 };
 
@@ -204,8 +266,10 @@ private _fnc_spawnInfantry = {
     params ["_template","_position"];
     private _classes = +(_template getOrDefault ["units",[]]);
     if (_classes isEqualTo []) exitWith { grpNull };
+
     private _group = [_position,_side,_classes,[],[],[],[],[],_position getDir _centerPos,true] call BIS_fnc_spawnGroup;
     if (isNull _group) exitWith { grpNull };
+
     _group deleteGroupWhenEmpty true;
     _group setFormation (_template getOrDefault ["formation","STAG COLUMN"]);
     private _skill = _template getOrDefault ["skill",[0.4,0.55]];
@@ -213,6 +277,7 @@ private _fnc_spawnInfantry = {
         private _value = if (_skill isEqualType []) then { (_skill select 0) + random ((_skill select 1)-(_skill select 0)) } else { _skill };
         _x setSkill ((_value max 0) min 1);
     } forEach units _group;
+
     [_group] call _fnc_taskInfantry;
     _group
 };
@@ -221,11 +286,14 @@ private _fnc_spawnVehicle = {
     params ["_template","_position"];
     private _class = _template getOrDefault ["vehicleClass",""];
     if (_class isEqualTo "") exitWith { [objNull,grpNull] };
+
     private _vehicle = createVehicle [_class,_position,[],0,"NONE"];
     if (isNull _vehicle) exitWith { [objNull,grpNull] };
+
     _vehicle setDir (_position getDir _centerPos);
     createVehicleCrew _vehicle;
     private _group = group effectiveCommander _vehicle;
+
     if (isNull _group) then {
         deleteVehicle _vehicle;
         [objNull,grpNull]
