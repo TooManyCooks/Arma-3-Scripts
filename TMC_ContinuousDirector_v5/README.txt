@@ -23,6 +23,7 @@ private _settings = createHashMapFromArray [
     ["scalingMode","AREA"],
     ["scalingSide",west],
     ["initialDelay",1],
+    ["scalingEvaluationInterval",5],
     ["enemyRatio",3],
     ["scalingUnitsPerVehicle",10],
     ["infantryEvaluationInterval",5],
@@ -32,7 +33,7 @@ private _settings = createHashMapFromArray [
     ["stuckTimeout",75],
     ["infantryMinimumServerFPS",18],
     ["vehicleMinimumServerFPS",18],
-    ["debugMode","LOG"]
+    ["debugMode","NONE"]
 ];
 ["START",thisTrigger,_settings] execVM "TMC_ContinuousDirector.sqf";
 
@@ -48,17 +49,29 @@ One managed OPFOR vehicle per ten living BLUFOR, minimum one while BLUFOR are pr
 One infantry group may be requested every five seconds.
 One vehicle may be requested every ten seconds, offset by 2.5 seconds.
 B1 and B2 groups contain sixteen units.
-Droidekas spawn as independent one-unit groups so each can roll and maneuver separately.
+Droidekas spawn as independent one-unit groups.
 BX commandos use a separate six-unit team.
-Each infantry group receives a LAMBS Task CQB waypoint centered on the nearest living BLUFOR group leader.
-The director updates that waypoint when the selected BLUFOR leader moves.
-Infantry ignores aircraft, uses AWARE and YELLOW behavior, keeps enableAttack disabled, and retains FULL speed.
-A behavior watchdog checks groups every twenty seconds and reissues movement after seventy-five seconds without meaningful progress.
+Each infantry group receives a LAMBS Task CQB waypoint centered on the nearest living ground-based BLUFOR group leader.
+The waypoint updates when its target changes or moves at least thirty-five meters.
+Infantry ignores aircraft through a cached aircraft registry and an EntityCreated event handler.
+A behavior watchdog checks every twenty seconds.
+Groups are not treated as stuck while near enemies, actively clearing buildings, or within one hundred meters of their target.
 LAMBS reinforcement and radio sharing are enabled.
 Knowledge seeding chance is 25 percent.
-Visibility tests only consider players within 1500 meters of the candidate spawn.
+Visibility tests only consider players within 1500 meters of a candidate spawn.
 Position searches use forty attempts.
 All spawned infantry have stamina and fatigue disabled.
+
+Efficiency changes:
+The director uses managed group and vehicle registries instead of repeatedly scanning allGroups and vehicles.
+The main scheduler exits immediately unless a scaling, infantry, vehicle, behavior, or status evaluation is due.
+The allUnits scaling scan runs on its own five-second interval.
+Living players are cached once per spawn package and reused for distance, visibility, and target selection.
+Clone Wars templates and class validation are cached once per mission.
+The wrapper calls the spawn function directly without creating a second scheduled script.
+The spawn delay is zero for normal one-group director packages.
+Debug logging defaults to NONE and periodic status logging only runs when LOG or MARKERS mode is enabled.
+Aircraft ignore commands are only applied when a group or aircraft is newly registered.
 
 Commands:
 ["STATUS"] execVM "TMC_ContinuousDirector.sqf";
