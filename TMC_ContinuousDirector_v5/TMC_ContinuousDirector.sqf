@@ -32,8 +32,19 @@ if (_mode in ["STOP", "PAUSE", "RESUME", "STATUS"]) exitWith {
                 removeMissionEventHandler ["EntityCreated", _entityCreatedEH];
             };
 
+            {
+                if (!scriptDone _x) then {
+                    terminate _x;
+                };
+            } forEach (
+                (_state getOrDefault ["infantryHandles", []])
+                + (_state getOrDefault ["vehicleHandles", []])
+            );
+
             _state set ["pfhHandle", -1];
             _state set ["entityCreatedEH", -1];
+            _state set ["infantryHandles", []];
+            _state set ["vehicleHandles", []];
             missionNamespace setVariable [_stateName, _state];
             diag_log "[TMC v5 Director] Stopped.";
         };
@@ -78,6 +89,7 @@ private _defaults = createHashMapFromArray [
     ["scalingMode", "AREA"],
     ["scalingSide", west],
     ["scalingRadius", 300],
+    ["scalingEvaluationInterval", 5],
     ["minimumScalingUnits", 1],
     ["enemySide", east],
     ["enemyRatio", 3],
@@ -134,13 +146,15 @@ private _existingVehicleGroups = _existingManagedGroups select {
 };
 
 private _existingManagedVehicles = vehicles select {
-    alive _x
-    && { _x getVariable ["TMC_attackWaveVehicle", false] }
-    && { crew _x findIf { alive _x } >= 0 }
+    alive _x && { _x getVariable ["TMC_attackWaveVehicle", false] }
 };
 
-private _knownAircraft = vehicles select {
-    alive _x && { _x isKindOf "Air" }
+private _knownAircraft = if (_config get "ignoreAircraft") then {
+    vehicles select {
+        alive _x && { _x isKindOf "Air" }
+    }
+} else {
+    []
 };
 
 private _now = diag_tickTime;
@@ -160,6 +174,7 @@ private _state = createHashMapFromArray [
     ["packageNumber", 0],
     ["retaskedTotal", 0],
     ["stuckTotal", 0],
+    ["nextScalingCheck", _now + (_config get "initialDelay")],
     ["nextInfantryCheck", _now + (_config get "initialDelay")],
     ["nextVehicleCheck", _now + (_config get "initialDelay") + (_config get "vehicleEvaluationOffset")],
     ["nextBehaviorCheck", _now + (_config get "initialDelay") + 5],
@@ -178,38 +193,39 @@ if (_config get "ignoreAircraft") then {
     } forEach _existingInfantryGroups;
 };
 
-private _entityCreatedEH = addMissionEventHandler ["EntityCreated", {
-    params ["_entity"];
+private _entityCreatedEH = -1;
 
-    if (
-        !isServer
-        || { isNull _entity }
-        || { !(_entity isKindOf "Air") }
-    ) exitWith {};
+if (_config get "ignoreAircraft") then {
+    _entityCreatedEH = addMissionEventHandler ["EntityCreated", {
+        params ["_entity"];
 
-    private _stateName = "TMC_ContinuousDirector_State";
-    private _state = missionNamespace getVariable [_stateName, createHashMap];
+        if (
+            !isServer
+            || { isNull _entity }
+            || { !(_entity isKindOf "Air") }
+        ) exitWith {};
 
-    if (
-        (count _state) isEqualTo 0
-        || { !(_state getOrDefault ["running", false]) }
-    ) exitWith {};
+        private _stateName = "TMC_ContinuousDirector_State";
+        private _state = missionNamespace getVariable [_stateName, createHashMap];
 
-    private _config = _state getOrDefault ["config", createHashMap];
-    if !(_config getOrDefault ["ignoreAircraft", true]) exitWith {};
+        if (
+            (count _state) isEqualTo 0
+            || { !(_state getOrDefault ["running", false]) }
+        ) exitWith {};
 
-    private _knownAircraft = _state getOrDefault ["knownAircraft", []];
-    _knownAircraft pushBackUnique _entity;
-    _state set ["knownAircraft", _knownAircraft];
+        private _knownAircraft = _state getOrDefault ["knownAircraft", []];
+        _knownAircraft pushBackUnique _entity;
+        _state set ["knownAircraft", _knownAircraft];
 
-    {
-        if (!isNull _x && { units _x findIf { alive _x } >= 0 }) then {
-            _x ignoreTarget _entity;
-        };
-    } forEach (_state getOrDefault ["infantryGroups", []]);
+        {
+            if (!isNull _x && { units _x findIf { alive _x } >= 0 }) then {
+                _x ignoreTarget _entity;
+            };
+        } forEach (_state getOrDefault ["infantryGroups", []]);
 
-    missionNamespace setVariable [_stateName, _state];
-}];
+        missionNamespace setVariable [_stateName, _state];
+    }];
+};
 
 _state set ["entityCreatedEH", _entityCreatedEH];
 missionNamespace setVariable [_stateName, _state];
@@ -234,13 +250,21 @@ private _fnc_evaluate = {
     private _now = diag_tickTime;
     private _debugMode = toUpper (_config getOrDefault ["debugMode", "NONE"]);
 
+    private _scalingDue = _now >= (_state get "nextScalingCheck");
     private _infantryDue = _now >= (_state get "nextInfantryCheck");
     private _vehicleDue = _now >= (_state get "nextVehicleCheck");
     private _behaviorDue = _now >= (_state get "nextBehaviorCheck");
     private _statusDue = _debugMode in ["LOG", "MARKERS"]
         && { _now >= (_state get "nextStatusLog") };
 
-    if !(_infantryDue || _vehicleDue || _behaviorDue || _statusDue) exitWith {};
+    if !(_scalingDue || _infantryDue || _vehicleDue || _behaviorDue || _statusDue) exitWith {};
+
+    if (_scalingDue) then {
+        _state set [
+            "nextScalingCheck",
+            _now + (_config get "scalingEvaluationInterval")
+        ];
+    };
 
     if (_infantryDue) then {
         _state set [
@@ -284,9 +308,10 @@ private _fnc_evaluate = {
         !isNull _x && { units _x findIf { alive _x } >= 0 }
     };
     private _managedVehicles = (_state getOrDefault ["managedVehicles", []]) select {
-        !isNull _x
-        && { alive _x }
-        && { crew _x findIf { alive _x } >= 0 }
+        !isNull _x && { alive _x }
+    };
+    private _activeVehicles = _managedVehicles select {
+        crew _x findIf { alive _x } >= 0
     };
     private _knownAircraft = (_state getOrDefault ["knownAircraft", []]) select {
         !isNull _x && { alive _x }
@@ -301,9 +326,17 @@ private _fnc_evaluate = {
 
     private _center = _state get "center";
     private _centerPos = _center call CBA_fnc_getPos;
+
     if ((count _centerPos) < 2) exitWith {
         diag_log "[TMC v5 Director] Center reference became invalid. Director stopped.";
+
+        private _entityCreatedEH = _state getOrDefault ["entityCreatedEH", -1];
+        if (_entityCreatedEH >= 0) then {
+            removeMissionEventHandler ["EntityCreated", _entityCreatedEH];
+        };
+
         _state set ["running", false];
+        _state set ["entityCreatedEH", -1];
         missionNamespace setVariable [_stateName, _state];
         [_pfhHandle] call CBA_fnc_removePerFrameHandler;
     };
@@ -316,7 +349,7 @@ private _fnc_evaluate = {
     private _scalingSide = _config get "scalingSide";
     private _enemySide = _config get "enemySide";
 
-    if (_infantryDue || _vehicleDue || _statusDue) then {
+    if (_scalingDue) then {
         private _sideUnits = allUnits select {
             alive _x && { side group _x isEqualTo _scalingSide }
         };
@@ -381,7 +414,7 @@ private _fnc_evaluate = {
 
     private _effectiveInfantry = _infantryCount
         + (count _infantryHandles * round (_config get "estimatedInfantryPerGroup"));
-    private _effectiveVehicles = count _managedVehicles + count _vehicleHandles;
+    private _effectiveVehicles = count _activeVehicles + count _vehicleHandles;
     private _infantryDeficit = (_desiredInfantry - _effectiveInfantry) max 0;
     private _vehicleDeficit = (_desiredVehicles - _effectiveVehicles) max 0;
 
@@ -467,7 +500,20 @@ private _fnc_evaluate = {
                         (_config get "cqbRadius") max 25
                     );
                     _group setCurrentWaypoint _waypoint;
+
+                    if (!_enemyNearby && { !_activeCQB }) then {
+                        _group move _targetPos;
+                    };
+
                     _group setVariable ["TMC_attackWaypoint", _waypoint];
+                    _group setVariable ["TMC_attackTarget", _target];
+                    _group setVariable ["TMC_attackTargetPosition", _targetPos];
+                    _group setVariable ["TMC_lastLeaderPosition", getPosATL _leader];
+                    _group setVariable ["TMC_lastProgressTime", _now];
+                    _group setVariable [
+                        "TMC_lastTargetDistance",
+                        _leader distance2D _targetPos
+                    ];
                     _retaskedThisCheck = _retaskedThisCheck + 1;
                 };
 
@@ -494,6 +540,12 @@ private _fnc_evaluate = {
 
                     _group setVariable ["TMC_attackTarget", _target];
                     _group setVariable ["TMC_attackTargetPosition", _targetPos];
+                    _group setVariable ["TMC_lastLeaderPosition", getPosATL _leader];
+                    _group setVariable ["TMC_lastProgressTime", _now];
+                    _group setVariable [
+                        "TMC_lastTargetDistance",
+                        _leader distance2D _targetPos
+                    ];
                     _retaskedThisCheck = _retaskedThisCheck + 1;
                 };
 
@@ -690,7 +742,7 @@ private _fnc_evaluate = {
         ["desiredInfantry", _desiredInfantry],
         ["effectiveInfantry", _effectiveInfantry],
         ["infantryDeficit", _infantryDeficit],
-        ["vehicles", count _managedVehicles],
+        ["vehicles", count _activeVehicles],
         ["desiredVehicles", _desiredVehicles],
         ["effectiveVehicles", _effectiveVehicles],
         ["vehicleDeficit", _vehicleDeficit],
@@ -736,7 +788,8 @@ _state set ["pfhHandle", _pfhHandle];
 missionNamespace setVariable [_stateName, _state];
 
 diag_log format [
-    "[TMC v5 Director] Started. Infantry %1:1 every %2s. Vehicles 1:%3 every %4s with %5s offset. Behavior checks every %6s.",
+    "[TMC v5 Director] Started. Scaling every %1s. Infantry %2:1 every %3s. Vehicles 1:%4 every %5s with %6s offset. Behavior checks every %7s.",
+    _config get "scalingEvaluationInterval",
     _config get "enemyRatio",
     _config get "infantryEvaluationInterval",
     _config get "scalingUnitsPerVehicle",
