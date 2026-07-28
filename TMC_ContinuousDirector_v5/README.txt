@@ -33,6 +33,7 @@ private _settings = createHashMapFromArray [
     ["stuckTimeout",75],
     ["infantryMinimumServerFPS",18],
     ["vehicleMinimumServerFPS",18],
+    ["estimatedInfantryPerGroup",29],
     ["debugMode","NONE"]
 ];
 ["START",thisTrigger,_settings] execVM "TMC_ContinuousDirector.sqf";
@@ -46,11 +47,18 @@ Server Only: Yes
 Behavior:
 Three managed OPFOR infantry per living BLUFOR in the scaling area.
 One managed OPFOR vehicle per ten living BLUFOR, minimum one while BLUFOR are present.
+The director calculates reinforcement requirements from the actual number of living managed OPFOR infantry, not from the number of OPFOR groups.
 One infantry group may be requested every five seconds.
 One vehicle may be requested every ten seconds, offset by 2.5 seconds.
-B1 and B2 groups contain sixteen units.
-Droidekas spawn as independent one-unit groups.
-BX commandos use a separate six-unit team.
+The primary infantry pool uses large groups of forty, thirty, and twenty droids to reduce the number of AI group leaders.
+The forty-unit group is a B1 assault formation.
+The thirty-unit group is a B1 fire-support formation.
+The twenty-unit group is a mixed B1/B2 assault formation.
+Large formations have a combined weight of twenty-eight while each specialty formation has a weight of one, so normal director packages strongly favor the larger groups.
+BX commandos use a separate six-unit team: one captain, three standard BX droids, and two assassins.
+B2 Hunter Cells spawn as independent three-unit B2 groups.
+Droidekas spawn as independent one-unit groups so they retain their own movement behavior.
+The recommended pending-package estimate is twenty-nine infantry per group, matching the weighted template average.
 Each infantry group receives a LAMBS Task CQB waypoint centered on the nearest living ground-based BLUFOR group leader.
 The waypoint updates when its target changes or moves at least thirty-five meters.
 Infantry ignores aircraft through a cached aircraft registry and an EntityCreated event handler.
