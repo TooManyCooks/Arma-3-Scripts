@@ -535,6 +535,8 @@ private _fnc_evaluate = {
 
                     _destinationGroup setVariable ["TMC_attackWaveAllowMerge", true];
                     _destinationGroup setVariable ["TMC_attackWaveTemplate", "Merged regular infantry"];
+                    _destinationGroup setVariable ["TMC_lastLeaderPosition", getPosATL _destinationLeader];
+                    _destinationGroup setVariable ["TMC_lastProgressTime", _now];
 
                     if ((units _sourceGroup) isEqualTo []) then {
                         deleteGroup _sourceGroup;
