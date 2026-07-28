@@ -16,7 +16,7 @@ params [
     ["_cqbRadius", 75, [0]]
 ];
 
-private _cacheName = "TMC_CloneWars_TemplateCache_v5_LargeGroups";
+private _cacheName = "TMC_CloneWars_TemplateCache_v5_MergeGroups";
 private _templateCache = missionNamespace getVariable [_cacheName, createHashMap];
 
 if ((count _templateCache) isEqualTo 0) then {
@@ -85,56 +85,62 @@ if ((count _templateCache) isEqualTo 0) then {
     };
 
     private _b1AssaultUnits = [_B1_COMMANDER];
-    _b1AssaultUnits append ([_B1_E5, 27] call _fnc_repeatClass);
-    _b1AssaultUnits append ([_B1_AR, 6] call _fnc_repeatClass);
-    _b1AssaultUnits append ([_B1_AT, 4] call _fnc_repeatClass);
-    _b1AssaultUnits append ([_B1_SBB3, 2] call _fnc_repeatClass);
+    _b1AssaultUnits append ([_B1_E5, 20] call _fnc_repeatClass);
+    _b1AssaultUnits append ([_B1_AR, 5] call _fnc_repeatClass);
+    _b1AssaultUnits append ([_B1_AT, 3] call _fnc_repeatClass);
+    _b1AssaultUnits append ([_B1_SBB3, 1] call _fnc_repeatClass);
 
     [createHashMapFromArray [
-        ["name", "B1 Assault Battalion Group (40)"],
+        ["name", "B1 Assault Company (30)"],
         ["weight", 12],
         ["units", _b1AssaultUnits],
         ["skill", [0.38, 0.52]],
-        ["objectClearance", 18],
-        ["terrainClearance", 5],
-        ["maxGradient", 0.28],
-        ["visibilityRadius", 22]
+        ["objectClearance", 16],
+        ["terrainClearance", 4],
+        ["maxGradient", 0.29],
+        ["visibilityRadius", 20],
+        ["allowMerge", true],
+        ["maximumMergedSize", 30]
     ]] call _fnc_addInfantryTemplate;
 
     private _b1FireSupportUnits = [_B1_COMMANDER];
-    _b1FireSupportUnits append ([_B1_E5, 14] call _fnc_repeatClass);
-    _b1FireSupportUnits append ([_B1_AR, 8] call _fnc_repeatClass);
-    _b1FireSupportUnits append ([_B1_AT, 4] call _fnc_repeatClass);
-    _b1FireSupportUnits append ([_B1_SNIPER, 2] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_E5, 9] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_AR, 5] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_AT, 3] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_SNIPER, 1] call _fnc_repeatClass);
     _b1FireSupportUnits append ([_B1_SBB3, 1] call _fnc_repeatClass);
 
     [createHashMapFromArray [
-        ["name", "B1 Fire Support Company (30)"],
+        ["name", "B1 Fire Support Platoon (20)"],
         ["weight", 9],
         ["units", _b1FireSupportUnits],
         ["skill", [0.41, 0.56]],
-        ["objectClearance", 16],
+        ["objectClearance", 14],
         ["terrainClearance", 4],
-        ["maxGradient", 0.28],
-        ["visibilityRadius", 20]
+        ["maxGradient", 0.30],
+        ["visibilityRadius", 18],
+        ["allowMerge", true],
+        ["maximumMergedSize", 30]
     ]] call _fnc_addInfantryTemplate;
 
     private _mixedAssaultUnits = [_B1_COMMANDER];
-    _mixedAssaultUnits append ([_B1_E5, 9] call _fnc_repeatClass);
-    _mixedAssaultUnits append ([_B1_AR, 3] call _fnc_repeatClass);
-    _mixedAssaultUnits append ([_B1_AT, 2] call _fnc_repeatClass);
-    _mixedAssaultUnits append ([_B2, 5] call _fnc_repeatClass);
+    _mixedAssaultUnits append ([_B1_E5, 4] call _fnc_repeatClass);
+    _mixedAssaultUnits append ([_B1_AR, 1] call _fnc_repeatClass);
+    _mixedAssaultUnits append ([_B1_AT, 1] call _fnc_repeatClass);
+    _mixedAssaultUnits append ([_B2, 3] call _fnc_repeatClass);
 
     [createHashMapFromArray [
-        ["name", "B1/B2 Assault Platoon (20)"],
+        ["name", "B1/B2 Assault Squad (10)"],
         ["weight", 7],
         ["units", _mixedAssaultUnits],
         ["skill", [0.44, 0.59]],
-        ["objectClearance", 14],
+        ["objectClearance", 11],
         ["terrainClearance", 4],
-        ["maxGradient", 0.27],
-        ["visibilityRadius", 18],
-        ["visibilityHeight", 1.8]
+        ["maxGradient", 0.31],
+        ["visibilityRadius", 14],
+        ["visibilityHeight", 1.8],
+        ["allowMerge", true],
+        ["maximumMergedSize", 30]
     ]] call _fnc_addInfantryTemplate;
 
     [createHashMapFromArray [
@@ -152,7 +158,9 @@ if ((count _templateCache) isEqualTo 0) then {
         ["objectClearance", 8],
         ["terrainClearance", 3],
         ["maxGradient", 0.35],
-        ["visibilityRadius", 11]
+        ["visibilityRadius", 11],
+        ["allowMerge", false],
+        ["maximumMergedSize", 6]
     ]] call _fnc_addInfantryTemplate;
 
     [createHashMapFromArray [
@@ -164,7 +172,9 @@ if ((count _templateCache) isEqualTo 0) then {
         ["terrainClearance", 4],
         ["maxGradient", 0.28],
         ["visibilityRadius", 10],
-        ["visibilityHeight", 1.8]
+        ["visibilityHeight", 1.8],
+        ["allowMerge", false],
+        ["maximumMergedSize", 3]
     ]] call _fnc_addInfantryTemplate;
 
     [createHashMapFromArray [
@@ -176,7 +186,9 @@ if ((count _templateCache) isEqualTo 0) then {
         ["terrainClearance", 4],
         ["maxGradient", 0.24],
         ["visibilityRadius", 10],
-        ["visibilityHeight", 1.8]
+        ["visibilityHeight", 1.8],
+        ["allowMerge", false],
+        ["maximumMergedSize", 1]
     ]] call _fnc_addInfantryTemplate;
 
     ["GAT", "3AS_GAT", 3, 18, 0.15] call _fnc_addVehicleTemplate;
@@ -252,6 +264,14 @@ private _config = createHashMapFromArray [
         _group setVariable [
             "TMC_attackWaveTemplate",
             _template getOrDefault ["name", "UNKNOWN"]
+        ];
+        _group setVariable [
+            "TMC_attackWaveAllowMerge",
+            _template getOrDefault ["allowMerge", false]
+        ];
+        _group setVariable [
+            "TMC_attackWaveMaximumMergedSize",
+            round (_template getOrDefault ["maximumMergedSize", 30])
         ];
 
         if (!isNull _vehicle) then {
