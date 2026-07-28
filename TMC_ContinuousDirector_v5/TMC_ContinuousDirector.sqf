@@ -51,14 +51,20 @@ if (_mode in ["STOP", "PAUSE", "RESUME", "STATUS"]) exitWith {
 
         case "PAUSE": {
             _state set ["paused", true];
+            private _snapshot = _state getOrDefault ["snapshot", createHashMap];
+            _snapshot set ["paused", true];
+            _state set ["snapshot", _snapshot];
             missionNamespace setVariable [_stateName, _state];
-            diag_log "[TMC v5 Director] Paused.";
+            diag_log "[TMC v5 Director] Paused by command.";
         };
 
         case "RESUME": {
             _state set ["paused", false];
+            private _snapshot = _state getOrDefault ["snapshot", createHashMap];
+            _snapshot set ["paused", false];
+            _state set ["snapshot", _snapshot];
             missionNamespace setVariable [_stateName, _state];
-            diag_log "[TMC v5 Director] Resumed.";
+            diag_log "[TMC v5 Director] Resumed by command.";
         };
 
         case "STATUS": {
@@ -108,6 +114,10 @@ private _defaults = createHashMapFromArray [
     ["targetMoveThreshold", 35],
     ["cqbRadius", 75],
     ["ignoreAircraft", true],
+    ["mergeEnabled", true],
+    ["mergeThreshold", 5],
+    ["mergeSearchRadius", 300],
+    ["maximumMergedGroupSize", 30],
     ["maxDesiredInfantry", -1],
     ["hardInfantryCap", 450],
     ["maxActiveVehicles", 20],
@@ -116,7 +126,7 @@ private _defaults = createHashMapFromArray [
     ["maxManagedGroups", 72],
     ["infantryMinimumServerFPS", 15],
     ["vehicleMinimumServerFPS", 15],
-    ["estimatedInfantryPerGroup", 12],
+    ["estimatedInfantryPerGroup", 20],
     ["waveScript", "TMC_AttackWave_CloneWars.sqf"],
     ["minSpawnRadius", 500],
     ["maxSpawnRadius", 850],
@@ -174,12 +184,14 @@ private _state = createHashMapFromArray [
     ["packageNumber", 0],
     ["retaskedTotal", 0],
     ["stuckTotal", 0],
+    ["mergedGroupsTotal", 0],
+    ["mergedUnitsTotal", 0],
     ["nextScalingCheck", _now + (_config get "initialDelay")],
     ["nextInfantryCheck", _now + (_config get "initialDelay")],
     ["nextVehicleCheck", _now + (_config get "initialDelay") + (_config get "vehicleEvaluationOffset")],
     ["nextBehaviorCheck", _now + (_config get "initialDelay") + 5],
     ["nextStatusLog", _now + (_config get "statusLogInterval")],
-    ["snapshot", createHashMap]
+    ["snapshot", createHashMapFromArray [["running", true], ["paused", false]]]
 ];
 
 missionNamespace setVariable [_stateName, _state];
@@ -418,8 +430,127 @@ private _fnc_evaluate = {
     private _infantryDeficit = (_desiredInfantry - _effectiveInfantry) max 0;
     private _vehicleDeficit = (_desiredVehicles - _effectiveVehicles) max 0;
 
+    private _mergedGroupsThisCheck = 0;
+    private _mergedUnitsThisCheck = 0;
     private _retaskedThisCheck = 0;
     private _stuckThisCheck = 0;
+
+    if (
+        _behaviorDue
+        && { _config getOrDefault ["mergeEnabled", true] }
+        && { !(_infantryGroups isEqualTo []) }
+    ) then {
+        private _mergeThreshold = (round (_config getOrDefault ["mergeThreshold", 5])) max 1;
+        private _mergeSearchRadius = (_config getOrDefault ["mergeSearchRadius", 300]) max 0;
+        private _defaultMaximumSize = (round (_config getOrDefault ["maximumMergedGroupSize", 30])) max _mergeThreshold;
+        private _enemyExclusionRadius = (_config get "stuckEnemyExclusionRadius") max 0;
+
+        private _fnc_groupBusy = {
+            params ["_group"];
+
+            private _leader = leader _group;
+            if (isNull _leader) exitWith { true };
+
+            private _lambsTask = _leader getVariable ["lambs_main_currentTask", ""];
+            private _activeCQB = (_lambsTask find "Clearing rooms") >= 0
+                || { (_lambsTask find "Rush enemy") >= 0 };
+            private _nearestEnemy = _leader findNearestEnemy (getPosATL _leader);
+            private _enemyNearby = !isNull _nearestEnemy
+                && { _leader distance2D _nearestEnemy <= _enemyExclusionRadius };
+
+            _activeCQB || _enemyNearby
+        };
+
+        private _sourceGroups = +(_infantryGroups select {
+            _x getVariable ["TMC_attackWaveAllowMerge", false]
+            && {
+                private _living = { alive _x } count units _x;
+                _living > 0 && { _living < _mergeThreshold }
+            }
+        });
+
+        {
+            private _sourceGroup = _x;
+            private _sourceUnits = units _sourceGroup select { alive _x };
+            private _sourceCount = count _sourceUnits;
+            private _sourceLeader = leader _sourceGroup;
+
+            if (
+                _sourceCount > 0
+                && { _sourceCount < _mergeThreshold }
+                && { !isNull _sourceLeader }
+                && { !([_sourceGroup] call _fnc_groupBusy) }
+            ) then {
+                private _eligibleGroups = _infantryGroups select {
+                    private _destinationGroup = _x;
+                    private _destinationLeader = leader _destinationGroup;
+                    private _destinationCount = { alive _x } count units _destinationGroup;
+                    private _destinationMaximum = (
+                        round (_destinationGroup getVariable [
+                            "TMC_attackWaveMaximumMergedSize",
+                            _defaultMaximumSize
+                        ])
+                    ) max _mergeThreshold;
+
+                    !(_destinationGroup isEqualTo _sourceGroup)
+                    && { !isNull _destinationGroup }
+                    && { !isNull _destinationLeader }
+                    && { _destinationGroup getVariable ["TMC_attackWaveAllowMerge", false] }
+                    && { _destinationCount > 0 }
+                    && { _destinationCount + _sourceCount <= _destinationMaximum }
+                    && { _sourceLeader distance2D _destinationLeader <= _mergeSearchRadius }
+                    && { !([_destinationGroup] call _fnc_groupBusy) }
+                };
+
+                private _establishedGroups = _eligibleGroups select {
+                    ({ alive _x } count units _x) >= _mergeThreshold
+                };
+                private _destinationPool = if (_establishedGroups isEqualTo []) then {
+                    _eligibleGroups
+                } else {
+                    _establishedGroups
+                };
+
+                if !(_destinationPool isEqualTo []) then {
+                    private _destinationGroup = _destinationPool select 0;
+                    private _bestDistance = _sourceLeader distance2D leader _destinationGroup;
+
+                    {
+                        private _distance = _sourceLeader distance2D leader _x;
+                        if (_distance < _bestDistance) then {
+                            _destinationGroup = _x;
+                            _bestDistance = _distance;
+                        };
+                    } forEach _destinationPool;
+
+                    _sourceGroup setVariable ["TMC_attackWaveAllowMerge", false];
+                    _sourceUnits joinSilent _destinationGroup;
+
+                    private _destinationLeader = leader _destinationGroup;
+                    {
+                        if (alive _x && { !isNull _destinationLeader }) then {
+                            _x doFollow _destinationLeader;
+                        };
+                    } forEach _sourceUnits;
+
+                    _destinationGroup setVariable ["TMC_attackWaveAllowMerge", true];
+                    _destinationGroup setVariable ["TMC_attackWaveTemplate", "Merged regular infantry"];
+
+                    if ((units _sourceGroup) isEqualTo []) then {
+                        deleteGroup _sourceGroup;
+                    };
+
+                    _mergedGroupsThisCheck = _mergedGroupsThisCheck + 1;
+                    _mergedUnitsThisCheck = _mergedUnitsThisCheck + _sourceCount;
+                };
+            };
+        } forEach _sourceGroups;
+
+        _infantryGroups = _infantryGroups select {
+            !isNull _x && { units _x findIf { alive _x } >= 0 }
+        };
+        _state set ["infantryGroups", _infantryGroups];
+    };
 
     if (_behaviorDue && { !(_infantryGroups isEqualTo []) }) then {
         private _groundPlayers = ([] call CBA_fnc_players) select {
@@ -634,9 +765,15 @@ private _fnc_evaluate = {
         + _retaskedThisCheck;
     private _stuckTotal = (_state getOrDefault ["stuckTotal", 0])
         + _stuckThisCheck;
+    private _mergedGroupsTotal = (_state getOrDefault ["mergedGroupsTotal", 0])
+        + _mergedGroupsThisCheck;
+    private _mergedUnitsTotal = (_state getOrDefault ["mergedUnitsTotal", 0])
+        + _mergedUnitsThisCheck;
 
     _state set ["retaskedTotal", _retaskedTotal];
     _state set ["stuckTotal", _stuckTotal];
+    _state set ["mergedGroupsTotal", _mergedGroupsTotal];
+    _state set ["mergedUnitsTotal", _mergedUnitsTotal];
 
     private _usedSharedSlots = count _infantryGroups
         + count _vehicleGroups
@@ -750,6 +887,10 @@ private _fnc_evaluate = {
         ["vehicleGroups", count _vehicleGroups],
         ["pendingInfantryPackages", count _infantryHandles],
         ["pendingVehiclePackages", count _vehicleHandles],
+        ["mergedGroupsThisCheck", _mergedGroupsThisCheck],
+        ["mergedUnitsThisCheck", _mergedUnitsThisCheck],
+        ["mergedGroupsTotal", _mergedGroupsTotal],
+        ["mergedUnitsTotal", _mergedUnitsTotal],
         ["retaskedThisCheck", _retaskedThisCheck],
         ["stuckThisCheck", _stuckThisCheck],
         ["retaskedTotal", _retaskedTotal],
@@ -764,10 +905,16 @@ private _fnc_evaluate = {
 
     if (
         _debugMode in ["LOG", "MARKERS"]
-        && { _retaskedThisCheck > 0 || { _stuckThisCheck > 0 } }
+        && {
+            _mergedGroupsThisCheck > 0
+            || { _retaskedThisCheck > 0 }
+            || { _stuckThisCheck > 0 }
+        }
     ) then {
         diag_log format [
-            "[TMC v5 Director] Behavior check retasked %1 groups and recovered %2 stuck groups.",
+            "[TMC v5 Director] Behavior check merged %1 groups (%2 units), retasked %3 groups, and recovered %4 stuck groups.",
+            _mergedGroupsThisCheck,
+            _mergedUnitsThisCheck,
             _retaskedThisCheck,
             _stuckThisCheck
         ];
@@ -788,7 +935,7 @@ _state set ["pfhHandle", _pfhHandle];
 missionNamespace setVariable [_stateName, _state];
 
 diag_log format [
-    "[TMC v5 Director] Started. Scaling every %1s. Infantry %2:1 every %3s. Vehicles 1:%4 every %5s with %6s offset. Behavior checks every %7s.",
+    "[TMC v5 Director] Started. Scaling every %1s. Infantry %2:1 every %3s. Vehicles 1:%4 every %5s with %6s offset. Behavior and merge checks every %7s.",
     _config get "scalingEvaluationInterval",
     _config get "enemyRatio",
     _config get "infantryEvaluationInterval",
