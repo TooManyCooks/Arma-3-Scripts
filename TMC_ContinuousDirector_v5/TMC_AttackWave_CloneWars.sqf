@@ -16,7 +16,7 @@ params [
     ["_cqbRadius", 75, [0]]
 ];
 
-private _cacheName = "TMC_CloneWars_TemplateCache_v5";
+private _cacheName = "TMC_CloneWars_TemplateCache_v5_LargeGroups";
 private _templateCache = missionNamespace getVariable [_cacheName, createHashMap];
 
 if ((count _templateCache) isEqualTo 0) then {
@@ -37,14 +37,26 @@ if ((count _templateCache) isEqualTo 0) then {
     private _missingInfantryClasses = [];
     private _missingVehicleClasses = [];
 
+    private _fnc_repeatClass = {
+        params ["_class", "_count"];
+
+        private _result = [];
+        for "_index" from 1 to _count do {
+            _result pushBack _class;
+        };
+        _result
+    };
+
     private _fnc_addInfantryTemplate = {
         params ["_template"];
 
-        private _missing = (_template getOrDefault ["units", []]) select {
+        private _units = _template getOrDefault ["units", []];
+        private _missing = _units select {
             !(isClass (configFile >> "CfgVehicles" >> _x))
         };
 
         if (_missing isEqualTo []) then {
+            _template set ["unitCount", count _units];
             _infantryTemplates pushBack _template;
         } else {
             _missingInfantryClasses append _missing;
@@ -72,58 +84,62 @@ if ((count _templateCache) isEqualTo 0) then {
         };
     };
 
+    private _b1AssaultUnits = [_B1_COMMANDER];
+    _b1AssaultUnits append ([_B1_E5, 27] call _fnc_repeatClass);
+    _b1AssaultUnits append ([_B1_AR, 6] call _fnc_repeatClass);
+    _b1AssaultUnits append ([_B1_AT, 4] call _fnc_repeatClass);
+    _b1AssaultUnits append ([_B1_SBB3, 2] call _fnc_repeatClass);
+
     [createHashMapFromArray [
-        ["name", "B1 Assault Platoon"],
-        ["weight", 7],
-        ["units", [
-            _B1_COMMANDER,
-            _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5,
-            _B1_E5, _B1_AR, _B1_AR, _B1_AR, _B1_AT, _B1_AT, _B1_SBB3
-        ]],
+        ["name", "B1 Assault Battalion Group (40)"],
+        ["weight", 12],
+        ["units", _b1AssaultUnits],
         ["skill", [0.38, 0.52]],
-        ["objectClearance", 10],
-        ["terrainClearance", 3],
-        ["maxGradient", 0.32],
-        ["visibilityRadius", 14]
+        ["objectClearance", 18],
+        ["terrainClearance", 5],
+        ["maxGradient", 0.28],
+        ["visibilityRadius", 22]
     ]] call _fnc_addInfantryTemplate;
 
+    private _b1FireSupportUnits = [_B1_COMMANDER];
+    _b1FireSupportUnits append ([_B1_E5, 14] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_AR, 8] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_AT, 4] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_SNIPER, 2] call _fnc_repeatClass);
+    _b1FireSupportUnits append ([_B1_SBB3, 1] call _fnc_repeatClass);
+
     [createHashMapFromArray [
-        ["name", "B1 Fire Support Platoon"],
-        ["weight", 3],
-        ["units", [
-            _B1_COMMANDER,
-            _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5,
-            _B1_AR, _B1_AR, _B1_AR, _B1_AR,
-            _B1_AT, _B1_AT, _B1_AT,
-            _B1_SNIPER, _B1_SBB3
-        ]],
+        ["name", "B1 Fire Support Company (30)"],
+        ["weight", 9],
+        ["units", _b1FireSupportUnits],
         ["skill", [0.41, 0.56]],
-        ["objectClearance", 11],
-        ["terrainClearance", 3],
-        ["maxGradient", 0.30],
-        ["visibilityRadius", 15]
+        ["objectClearance", 16],
+        ["terrainClearance", 4],
+        ["maxGradient", 0.28],
+        ["visibilityRadius", 20]
     ]] call _fnc_addInfantryTemplate;
 
+    private _mixedAssaultUnits = [_B1_COMMANDER];
+    _mixedAssaultUnits append ([_B1_E5, 9] call _fnc_repeatClass);
+    _mixedAssaultUnits append ([_B1_AR, 3] call _fnc_repeatClass);
+    _mixedAssaultUnits append ([_B1_AT, 2] call _fnc_repeatClass);
+    _mixedAssaultUnits append ([_B2, 5] call _fnc_repeatClass);
+
     [createHashMapFromArray [
-        ["name", "B2 Assault Platoon"],
-        ["weight", 2],
-        ["units", [
-            _B1_COMMANDER,
-            _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5, _B1_E5,
-            _B1_AR, _B1_AR, _B1_AT, _B1_AT,
-            _B2, _B2, _B2, _B2, _B2
-        ]],
+        ["name", "B1/B2 Assault Platoon (20)"],
+        ["weight", 7],
+        ["units", _mixedAssaultUnits],
         ["skill", [0.44, 0.59]],
-        ["objectClearance", 12],
+        ["objectClearance", 14],
         ["terrainClearance", 4],
         ["maxGradient", 0.27],
-        ["visibilityRadius", 17],
+        ["visibilityRadius", 18],
         ["visibilityHeight", 1.8]
     ]] call _fnc_addInfantryTemplate;
 
     [createHashMapFromArray [
-        ["name", "BX Commando Team"],
-        ["weight", 2],
+        ["name", "BX Commando Team (6)"],
+        ["weight", 1],
         ["units", [
             _BX_CAPTAIN,
             _BX,
@@ -140,8 +156,20 @@ if ((count _templateCache) isEqualTo 0) then {
     ]] call _fnc_addInfantryTemplate;
 
     [createHashMapFromArray [
-        ["name", "Independent Droideka"],
-        ["weight", 3],
+        ["name", "B2 Hunter Cell (3)"],
+        ["weight", 1],
+        ["units", [_B2, _B2, _B2]],
+        ["skill", [0.50, 0.65]],
+        ["objectClearance", 8],
+        ["terrainClearance", 4],
+        ["maxGradient", 0.28],
+        ["visibilityRadius", 10],
+        ["visibilityHeight", 1.8]
+    ]] call _fnc_addInfantryTemplate;
+
+    [createHashMapFromArray [
+        ["name", "Independent Droideka (1)"],
+        ["weight", 1],
         ["units", [_DROIDEKA]],
         ["skill", [0.52, 0.67]],
         ["objectClearance", 8],
