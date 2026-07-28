@@ -68,6 +68,7 @@ The destination group must have enough capacity to remain at or below thirty liv
 The director prefers an established destination group with at least five living units before considering another depleted group.
 Groups do not merge while the source or destination is actively clearing buildings, rushing an enemy, or fighting an enemy within 125 meters.
 Survivors transfer with joinSilent and follow the surviving destination leader.
+The destination group's movement-progress tracking is reset after a merge so a leader change is not falsely treated as a stuck group.
 Merging does not change the director infantry count and therefore does not create a false reinforcement deficit.
 The weighted pending-package estimate is twenty infantry per group.
 Each infantry group receives a LAMBS Task CQB waypoint centered on the nearest living ground-based BLUFOR group leader.
