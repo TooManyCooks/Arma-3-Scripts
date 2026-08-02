@@ -91,14 +91,14 @@ private _defaults = createHashMapFromArray [
     ["enemySide", east],
     ["enemyRatio", 3],
     ["scalingUnitsPerVehicle", 10],
-    ["maxActiveVehicles", 10],
+    ["maxManagedInfantryGroups", 10],
+    ["maxManagedVehicleGroups", 5],
     ["initialDelay", 2],
     ["evaluationInterval", 5],
     ["behaviorEvaluationInterval", 20],
     ["statusLogInterval", 60],
     ["minimumServerFPS", 18],
     ["estimatedInfantryPerGroup", 20],
-    ["maxManagedGroups", 10],
     ["minSpawnRadius", 0],
     ["maxSpawnRadius", 850],
     ["minPlayerDistance", 100],
@@ -124,8 +124,13 @@ private _config = createHashMap;
 { _config set [_x, _overrides get _x] } forEach keys _overrides;
 
 _config set [
-    "maxManagedGroups",
-    (((round (_config get "maxManagedGroups")) max 1) min 10)
+    "maxManagedInfantryGroups",
+    (round (_config get "maxManagedInfantryGroups")) max 1
+];
+
+_config set [
+    "maxManagedVehicleGroups",
+    (round (_config get "maxManagedVehicleGroups")) max 0
 ];
 
 private _centerPos = _center call CBA_fnc_getPos;
@@ -348,58 +353,51 @@ private _fnc_evaluate = {
 
     private _scalingSide = _config get "scalingSide";
     private _enemySide = _config get "enemySide";
-    private _scalingCount = 0;
-    private _activeFriendlyAircraft = [];
 
-    if (_evaluationDue || _statusDue) then {
-        private _sideUnits = allUnits select {
-            alive _x && { side group _x isEqualTo _scalingSide }
+    private _sideUnits = allUnits select {
+        alive _x && { side group _x isEqualTo _scalingSide }
+    };
+
+    private _scalingMode = toUpper (_config get "scalingMode");
+    private _scalingUnits = switch (_scalingMode) do {
+        case "SIDE": {
+            _sideUnits
         };
 
-        private _scalingMode = toUpper (_config get "scalingMode");
-        private _scalingUnits = switch (_scalingMode) do {
-            case "SIDE": {
-                _sideUnits
-            };
+        case "RADIUS": {
+            _sideUnits select {
+                _x distance2D _centerPos <= (_config get "scalingRadius")
+            }
+        };
 
-            case "RADIUS": {
+        default {
+            if (
+                (_center isEqualType objNull && { !isNull _center })
+                || { _center isEqualType "" && { markerShape _center != "" } }
+            ) then {
+                _sideUnits select { _x inArea _center }
+            } else {
                 _sideUnits select {
                     _x distance2D _centerPos <= (_config get "scalingRadius")
                 }
-            };
-
-            default {
-                if (
-                    (_center isEqualType objNull && { !isNull _center })
-                    || { _center isEqualType "" && { markerShape _center != "" } }
-                ) then {
-                    _sideUnits select { _x inArea _center }
-                } else {
-                    _sideUnits select {
-                        _x distance2D _centerPos <= (_config get "scalingRadius")
-                    }
-                }
-            };
-        };
-
-        _scalingCount = count _scalingUnits;
-
-        _activeFriendlyAircraft = vehicles select {
-            !isNull _x
-            && { alive _x }
-            && { canMove _x }
-            && { _x isKindOf "Air" }
-            && { !isTouchingGround _x }
-            && { (getPosATL _x select 2) >= (_config get "airActiveAltitude") }
-            && {
-                crew _x findIf {
-                    alive _x && { side group _x isEqualTo _scalingSide }
-                } >= 0
             }
         };
-    } else {
-        private _oldSnapshot = _state getOrDefault ["snapshot", createHashMap];
-        _scalingCount = _oldSnapshot getOrDefault ["BLUFOR", 0];
+    };
+
+    private _scalingCount = count _scalingUnits;
+
+    private _activeFriendlyAircraft = vehicles select {
+        !isNull _x
+        && { alive _x }
+        && { canMove _x }
+        && { _x isKindOf "Air" }
+        && { !isTouchingGround _x }
+        && { (getPosATL _x select 2) >= (_config get "airActiveAltitude") }
+        && {
+            crew _x findIf {
+                alive _x && { side group _x isEqualTo _scalingSide }
+            } >= 0
+        }
     };
 
     if (_behaviorDue) then {
@@ -440,14 +438,14 @@ private _fnc_evaluate = {
                     [_group] call CBA_fnc_clearWaypoints;
                     _waypoint = _group addWaypoint [_centerPos, 0];
                     _waypoint setWaypointType "MOVE";
-                    _waypoint setWaypointBehaviour "AWARE";
-                    _waypoint setWaypointCombatMode "YELLOW";
-                    _waypoint setWaypointSpeed "FULL";
                     _group setVariable ["TMC_attackWaypoint", _waypoint];
                 } else {
                     _waypoint setWaypointPosition [_centerPos, 0];
                 };
 
+                _waypoint setWaypointBehaviour "AWARE";
+                _waypoint setWaypointCombatMode "YELLOW";
+                _waypoint setWaypointSpeed "FULL";
                 _group setCurrentWaypoint _waypoint;
                 _group move _centerPos;
             };
@@ -528,7 +526,9 @@ private _fnc_evaluate = {
         0
     };
 
-    _desiredVehicles = _desiredVehicles min round (_config get "maxActiveVehicles");
+    _desiredVehicles = _desiredVehicles min round (
+        _config get "maxManagedVehicleGroups"
+    );
 
     private _desiredAircraft = count _activeFriendlyAircraft;
 
@@ -541,33 +541,42 @@ private _fnc_evaluate = {
     private _vehicleDeficit = (_desiredVehicles - _effectiveVehicles) max 0;
     private _airDeficit = (_desiredAircraft - _effectiveAircraft) max 0;
 
-    private _usedGroups = count _infantryGroups
-        + count _vehicleGroups
-        + count _airGroups
-        + count _infantryHandles
-        + count _vehicleHandles
-        + count _airHandles;
+    private _usedInfantrySlots = count _infantryGroups + count _infantryHandles;
+    private _usedVehicleSlots = count _vehicleGroups + count _vehicleHandles;
 
-    private _maxGroups = round (_config get "maxManagedGroups");
-    private _availableSlots = (_maxGroups - _usedGroups) max 0;
+    private _availableInfantrySlots = (
+        round (_config get "maxManagedInfantryGroups") - _usedInfantrySlots
+    ) max 0;
+
+    private _availableVehicleSlots = (
+        round (_config get "maxManagedVehicleGroups") - _usedVehicleSlots
+    ) max 0;
+
+    private _availableAirSlots = _airDeficit;
     private _fps = diag_fps;
     private _sentKind = "NONE";
 
     if (
         _evaluationDue
-        && { _scalingCount >= round (_config get "minimumScalingUnits") }
-        && { _availableSlots > 0 }
         && { _fps >= (_config get "minimumServerFPS") }
     ) then {
         private _kind = "";
 
-        if (_airDeficit > 0) then {
+        if (_availableAirSlots > 0) then {
             _kind = "AIR";
         } else {
-            if (_vehicleDeficit > 0) then {
+            if (
+                _scalingCount >= round (_config get "minimumScalingUnits")
+                && { _vehicleDeficit > 0 }
+                && { _availableVehicleSlots > 0 }
+            ) then {
                 _kind = "VEHICLE";
             } else {
-                if (_infantryDeficit > 0) then {
+                if (
+                    _scalingCount >= round (_config get "minimumScalingUnits")
+                    && { _infantryDeficit > 0 }
+                    && { _availableInfantrySlots > 0 }
+                ) then {
                     _kind = "INFANTRY";
                 };
             };
@@ -630,21 +639,22 @@ private _fnc_evaluate = {
         ["infantry", _infantryCount],
         ["desiredInfantry", _desiredInfantry],
         ["infantryDeficit", _infantryDeficit],
+        ["infantryGroups", count _infantryGroups],
+        ["pendingInfantry", count _infantryHandles],
+        ["usedInfantrySlots", _usedInfantrySlots],
+        ["maxInfantrySlots", _config get "maxManagedInfantryGroups"],
         ["vehicles", count _activeVehicles],
         ["desiredVehicles", _desiredVehicles],
         ["vehicleDeficit", _vehicleDeficit],
+        ["vehicleGroups", count _vehicleGroups],
+        ["pendingVehicles", count _vehicleHandles],
+        ["usedVehicleSlots", _usedVehicleSlots],
+        ["maxVehicleSlots", _config get "maxManagedVehicleGroups"],
         ["aircraft", count _activeAircraft],
         ["desiredAircraft", _desiredAircraft],
         ["airDeficit", _airDeficit],
-        ["infantryGroups", count _infantryGroups],
-        ["vehicleGroups", count _vehicleGroups],
         ["airGroups", count _airGroups],
-        ["pendingInfantry", count _infantryHandles],
-        ["pendingVehicles", count _vehicleHandles],
         ["pendingAircraft", count _airHandles],
-        ["usedGroupSlots", _usedGroups],
-        ["maxGroupSlots", _maxGroups],
-        ["availableGroupSlots", _availableSlots],
         ["sentKind", _sentKind],
         ["fps", _fps]
     ];
@@ -667,9 +677,8 @@ _state set ["pfhHandle", _pfhHandle];
 missionNamespace setVariable [_stateName, _state];
 
 diag_log format [
-    "[TMC v6 Director] Started. Hard group cap %1. One package maximum every %2 seconds. Ground spawns %3-%4 meters from trigger center. Air matching enabled.",
-    _config get "maxManagedGroups",
-    _config get "evaluationInterval",
-    _config get "minSpawnRadius",
-    _config get "maxSpawnRadius"
+    "[TMC v6 Director] Started. Infantry cap %1 groups. Vehicle cap %2 groups. Aircraft match active BLUFOR aircraft. One package maximum every %3 seconds.",
+    _config get "maxManagedInfantryGroups",
+    _config get "maxManagedVehicleGroups",
+    _config get "evaluationInterval"
 ];
