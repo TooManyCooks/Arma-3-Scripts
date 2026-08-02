@@ -1,57 +1,65 @@
 TMC Task Garrison
 
-Purpose:
-Creates a single EAST droid group and garrisons it inside buildings covered by a task-start trigger.
+PURPOSE
+Creates one EAST droid group and places it in buildings around a task-start trigger.
 
-Requirements:
-- CBA_A3
-- ACE3 AI garrison function
+REQUIREMENTS
+- CBA_A3 recommended
+- ACE3 recommended
 - JLTS / Legion Studios droid classes used by the script
 
-Installation:
-1. Copy the entire TMC_TaskGarrison folder into the mission scenario folder.
+SCENARIO-FOLDER INSTALLATION
+1. Copy fn_taskGarrison.sqf into the mission root and rename it:
 
-2. Register the function in description.ext.
+   TMC_TaskGarrison.sqf
 
-If the mission does not already have CfgFunctions:
+2. Put this in the On Activation field of every Task#_start trigger:
 
-class CfgFunctions
-{
-    #include "TMC_TaskGarrison\CfgFunctions.hpp"
-};
+   [thisTrigger] execVM "TMC_TaskGarrison.sqf";
 
-If the mission already has CfgFunctions, add this line inside the existing class CfgFunctions block:
+3. Recommended trigger settings:
 
-#include "TMC_TaskGarrison\CfgFunctions.hpp"
+   Server Only: Yes
+   Repeatable: No
 
-3. Put this in the On Activation field of each Task#_start trigger:
+No CfgFunctions entry is required for Task Garrison. It runs directly through execVM and therefore cannot conflict with TMC_fnc_spawnAttackWave.
 
-[thisTrigger] spawn TMC_fnc_taskGarrison;
+IMPORTANT AREA SETUP
+The trigger position is the center of the garrison. The larger trigger width or height is used as the building-search radius, with a minimum of 25 meters.
 
-Recommended trigger settings:
-- Server Only: Yes
-- Repeatable: No
+The trigger must be placed over the buildings that should be populated and must be large enough to cover them.
 
-Behavior:
-- Counts all connected human players using CBA_fnc_players.
-- Headless clients are excluded by CBA_fnc_players.
-- Requests 2 droids per connected player.
+Optional fixed radius example:
+
+   [thisTrigger, 150] execVM "TMC_TaskGarrison.sqf";
+
+This searches 150 meters around the trigger regardless of the trigger's dimensions.
+
+BEHAVIOR
+- Counts all connected human players.
+- Requests 2 droids per player.
 - Uses a minimum of 6 droids.
-- Uses no scripted maximum droid count.
-- The available building positions inside the trigger radius remain the placement limit.
+- Has no scripted maximum droid count.
+- Available building positions remain the practical limit.
 - Every spawned droid belongs to one EAST group.
-- The group is marked for deletion when empty.
-- Building capacity is gathered with CBA_fnc_buildingPositions.
-- Unit class order is randomized with CBA_fnc_shuffle.
-- ACE randomly teleports units into garrison positions.
-- Units ACE cannot garrison are deleted.
-- JLTS_Droid_B1_Marine is not used.
+- Empty groups delete themselves.
+- Uses CBA player, building-position, and shuffle helpers when available.
+- Uses ACE random teleport garrison placement when available.
+- Includes a built-in placement fallback if ACE garrison is unavailable.
+- Deletes units that cannot be placed.
+- Does not use JLTS_Droid_B1_Marine.
+- Prevents the same non-repeatable trigger from spawning twice.
 
-Composition:
+COMPOSITION
 - Main line unit: JLTS_Droid_B1_E5
 - Approximately 1 JLTS_Droid_B1_AR per 5 droids
 - Approximately 1 JLTS_Droid_B1_SBB3 per 8 droids
 - Approximately 1 JLTS_Droid_B1_AT per 10 droids
 - Approximately 1 ls_droid_b2 per 12 droids
 
-The trigger's largest horizontal dimension is used as the garrison radius, with a minimum radius of 25 meters.
+TROUBLESHOOTING
+Search the server RPT for:
+
+   [TMC Task Garrison]
+
+The final log line reports player count, radius, buildings found, positions found, droids requested, and droids successfully placed.
