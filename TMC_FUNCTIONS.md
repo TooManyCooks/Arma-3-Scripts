@@ -4,8 +4,11 @@ This is the long-lived branch for the Arma 3 Star Wars mission functions develop
 
 ## Current packages
 
+### TMC_ContinuousDirector_v6
+Current Clone Wars reinforcement director. It enforces a hard shared limit of ten managed groups, sends infantry through a fixed-center LAMBS taskRush, gives ground vehicles exact-center Seek and Destroy waypoints, allows hidden ground spawning anywhere inside the configured radius, and matches active airborne BLUFOR aircraft one-for-one with managed CIS aircraft when group slots are available.
+
 ### TMC_ContinuousDirector_v5
-Continuous Clone Wars reinforcement director with infantry and vehicle scaling, managed registries, LAMBS tasking, depleted-group merging, FPS gates, and configurable production settings.
+Previous director version retained as a historical fallback. It includes infantry and vehicle scaling, managed registries, LAMBS CQB tasking, depleted-group merging, FPS gates, and configurable production settings.
 
 ### TMC_TaskGarrison
 Reusable task-start garrison function using CBA player and building helpers plus ACE garrison placement.
